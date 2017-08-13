@@ -31,7 +31,20 @@ Compiling the application should be as simple as typing `make`.
 
 When developing it can be useful to open the GTK+ inspector like this:
 
-    make && GTK_DEBUG=interactive sudo -E ./scannerjack
+    make && GTK_DEBUG=interactive ./scannerjack
+
+Running
+=======
+
+Scannerjack is hardcoded to use `/dev/ttyUSB0` at 19.200 baud. If this doesn't
+match your setup, you will need to modify the source code before Scannerjack
+will be usable.
+
+Please note that your user will need access to the serial device. Usually this
+can be accomplished by adding your user to the `dialout` group or using `sudo`
+to start the binary. You can verify acess rights in the shell by piping nothing
+to the device `>/dev/ttyUSB0`. If you miss the needed rights, your shell will
+output an error like "bash: /dev/ttyUSB0: Permission denied".
 
 License
 =======
