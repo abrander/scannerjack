@@ -8,6 +8,9 @@
 #define FROM_UNIDEN_BOOL(a) (((a)=='N') ? TRUE : FALSE)
 #define TO_UNIDEN_BOOL(a) ((a) ? 'N' : 'F')
 
+#define CSS_GREEN "* { background-color: #afa; }"
+#define CSS_RED "* { background-color: #faa; }"
+
 #define _channel_set_iter(uniden, ...) do { \
 	g_signal_handler_block(uniden->channel_store, uniden->channel_store_changed_id); \
 	gtk_list_store_set(uniden->channel_store, __VA_ARGS__); \
@@ -50,6 +53,8 @@ struct _SJUnidenWidget
 	GtkWidget *frequency_event;
 	GtkWidget *frequency_label;
 
+	GtkCssProvider *frequency_style;
+
 	gint frequency;
 	gint channel;
 	gint active_channel;
@@ -66,7 +71,6 @@ struct _SJUnidenWidget
 	GtkListStore *channel_store;
 	gulong channel_store_changed_id;
 	GtkWidget *progress;
-
 };
 
 static void _send_command(SJUnidenWidget *uniden, const gchar *cmd);
@@ -79,16 +83,11 @@ static void button_man_clicked(GtkButton *button, gpointer user_data);
 static gboolean channel_label_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer user_data);
 static gboolean frequency_label_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer user_data);
 
-G_DEFINE_TYPE(SJUnidenWidget, sj_uniden_widget, GTK_TYPE_VBOX);
+G_DEFINE_TYPE(SJUnidenWidget, sj_uniden_widget, GTK_TYPE_BOX);
 
 static void
 sj_uniden_widget_class_init(SJUnidenWidgetClass *klass)
 {
-	GtkWidgetClass *widget_class;
-	GtkObjectClass *object_class;
-
-	widget_class = GTK_WIDGET_CLASS(klass);
-	object_class = GTK_OBJECT_CLASS(klass);
 }
 
 static gboolean
@@ -199,6 +198,8 @@ sj_uniden_widget_init(SJUnidenWidget *uniden)
 	GtkWidget *button_man = gtk_button_new_with_label("Manual");
 	GtkWidget *channel_event = gtk_event_box_new();
 
+	gtk_orientable_set_orientation(GTK_ORIENTABLE(uniden), GTK_ORIENTATION_VERTICAL);
+
 	uniden->path = "/dev/ttyUSB0";
 
 	uniden->mode = CHANNEL_SCAN;
@@ -235,6 +236,10 @@ sj_uniden_widget_init(SJUnidenWidget *uniden)
 	uniden->frequency_label = gtk_label_new("-");
 
 	uniden->progress = gtk_progress_bar_new();
+
+	uniden->frequency_style = gtk_css_provider_new();
+	gtk_css_provider_load_from_data(uniden->frequency_style, CSS_RED, -1, NULL);
+	gtk_style_context_add_provider(gtk_widget_get_style_context(uniden->frequency_event), GTK_STYLE_PROVIDER(uniden->frequency_style), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 
 	gtk_label_set_use_markup(GTK_LABEL(uniden->frequency_label), TRUE);
 
@@ -444,8 +449,6 @@ _update_channel(SJUnidenWidget *uniden, const gint channel)
 static void
 _set_squelch(SJUnidenWidget *uniden, gboolean squelch_open)
 {
-	GdkColor color = {0, 0xFFFF, 0xAAAA, 0xAAAA};
-
 	/* Do nothing if there's no change */
 	if (uniden->squelch_open == squelch_open)
 	{
@@ -467,10 +470,12 @@ _set_squelch(SJUnidenWidget *uniden, gboolean squelch_open)
 	if (uniden->squelch_open)
 	{
 		uniden->got_frequency = FALSE;
-		gtk_widget_modify_bg (uniden->frequency_event, GTK_STATE_NORMAL, &color);
+		gtk_css_provider_load_from_data(uniden->frequency_style, CSS_GREEN, -1, NULL);
 	}
 	else
-		gtk_widget_modify_bg (uniden->frequency_event, GTK_STATE_NORMAL, NULL);
+	{
+		gtk_css_provider_load_from_data(uniden->frequency_style, CSS_RED, -1, NULL);
+	}
 }
 
 static void
