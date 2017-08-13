@@ -23,7 +23,7 @@ Scannerjack is *not* compatible with modern (GPS-enabled) Uniden scanners.
 Compiling and developing
 ========================
 
-For compiling Scannerjack GTK+ v3, gtk and make is required. On Ubuntu Linux
+For compiling Scannerjack GTK+ v3, gcc and make is required. On Ubuntu Linux
 this can be installed from the Ubuntu repositories with
 `sudo apt-get install libgtk-3-dev gcc make`.
 
