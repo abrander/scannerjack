@@ -1,6 +1,8 @@
 Scannerjack
 ===========
 
+![screenshot-1](https://user-images.githubusercontent.com/3726205/29249039-86a1cf36-8027-11e7-82fb-5b248e7d04c8.png)
+
 Scannerjack is a simple GTK+ application to edit channel settings on classic
 Uniden scanners.
 
