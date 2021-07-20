@@ -226,7 +226,7 @@ sj_uniden_widget_init(SJUnidenWidget *uniden)
 		G_TYPE_STRING,
 		G_TYPE_INT,
 		G_TYPE_STRING,
-		G_TYPE_INT
+		G_TYPE_LONG
 		);
 	uniden->channel_store_changed_id = g_signal_connect(G_OBJECT(uniden->channel_store), "row_changed", G_CALLBACK(channel_row_changed), uniden);
 
@@ -351,11 +351,11 @@ _update_frequency(SJUnidenWidget *uniden, const gint frequency)
 void
 _channel_hit(SJUnidenWidget *uniden, const gint channel)
 {
-	GTimeVal timeval;
+	gint64 now, activity;
 	GtkTreeIter iter;
-	gint hit, activity;
+	gint hit;
 
-	g_get_current_time(&timeval);
+	now = g_get_real_time();
 
 	_channel_find_iter(uniden, &iter, channel);
 	_channel_get_iter(uniden, &iter,
@@ -363,7 +363,7 @@ _channel_hit(SJUnidenWidget *uniden, const gint channel)
 		CHANNELSTORE_ACTIVITY, &activity,
 		-1);
 
-	if (timeval.tv_sec > (activity+3))
+	if (now > (activity+3))
 	{
 		hit++;
 
@@ -376,14 +376,14 @@ _channel_hit(SJUnidenWidget *uniden, const gint channel)
 void
 _channel_set_activity(SJUnidenWidget *uniden, const gint channel)
 {
-	GTimeVal timeval;
+	gint64 now;
 	GtkTreeIter iter;
 
-	g_get_current_time(&timeval);
+	now = g_get_real_time();
 
 	_channel_find_iter(uniden, &iter, channel);
 	_channel_set_iter(uniden, &iter,
-		CHANNELSTORE_ACTIVITY, timeval.tv_sec,
+		CHANNELSTORE_ACTIVITY, now,
 		-1);
 }
 
