@@ -3,6 +3,7 @@
 #include <string.h>
 #include <fcntl.h>
 #include <termios.h>
+#include <sys/file.h>
 #include "uniden.h"
 
 #define FROM_UNIDEN_BOOL(a) (((a)=='N') ? TRUE : FALSE)
@@ -490,6 +491,8 @@ button_connect_clicked(GtkButton *button, gpointer user_data)
 	uniden->fd = open(uniden->path, O_RDWR | O_NOCTTY | O_NONBLOCK);
 
 	if (uniden->fd<0) return;
+
+	if (flock(uniden->fd, LOCK_EX) < 0) return;
 
 	tcgetattr(uniden->fd,&uniden->oldtio);
 
