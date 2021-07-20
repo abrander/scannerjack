@@ -247,7 +247,10 @@ sj_uniden_widget_init(SJUnidenWidget *uniden)
 	g_timeout_add(125, _sync_fast, uniden);
 	g_timeout_add(1000, _sync_slow, uniden);
 
+	gtk_widget_set_events(uniden->frequency_event, GDK_SCROLL_MASK);
 	g_signal_connect(G_OBJECT(uniden->frequency_event), "scroll-event", G_CALLBACK(frequency_label_scroll), uniden);
+
+	gtk_widget_set_events(channel_event, GDK_SCROLL_MASK);
 	g_signal_connect(G_OBJECT(channel_event), "scroll-event", G_CALLBACK(channel_label_scroll), uniden);
 
 	g_signal_connect(G_OBJECT(button), "clicked", G_CALLBACK(button_connect_clicked), uniden);
