@@ -75,6 +75,10 @@ struct _SJUnidenWidget
 	GtkListStore *channel_store;
 	gulong channel_store_changed_id;
 	GtkWidget *progress;
+
+	GtkWidget *connect;
+	GtkWidget *scan;
+	GtkWidget *manual;
 };
 
 static void _send_command(SJUnidenWidget *uniden, const gchar *format, ...);
@@ -207,9 +211,6 @@ channel_row_changed(GtkTreeModel *tree_model, GtkTreePath *path, GtkTreeIter *it
 static void
 sj_uniden_widget_init(SJUnidenWidget *uniden)
 {
-	GtkWidget *button = gtk_button_new_with_label("Connect");
-	GtkWidget *button_scan = gtk_button_new_with_label("Scan");
-	GtkWidget *button_man = gtk_button_new_with_label("Manual");
 	GtkWidget *channel_event = gtk_event_box_new();
 
 	gtk_orientable_set_orientation(GTK_ORIENTABLE(uniden), GTK_ORIENTATION_VERTICAL);
@@ -251,6 +252,10 @@ sj_uniden_widget_init(SJUnidenWidget *uniden)
 
 	uniden->progress = gtk_progress_bar_new();
 
+	uniden->connect = gtk_button_new_with_label("Connect");
+	uniden->scan = gtk_button_new_with_label("Scan");
+	uniden->manual = gtk_button_new_with_label("Manual");
+
 	uniden->frequency_style = gtk_css_provider_new();
 	gtk_css_provider_load_from_data(uniden->frequency_style, CSS_RED, -1, NULL);
 	gtk_style_context_add_provider(gtk_widget_get_style_context(uniden->frequency_event), GTK_STYLE_PROVIDER(uniden->frequency_style), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
@@ -266,13 +271,13 @@ sj_uniden_widget_init(SJUnidenWidget *uniden)
 	gtk_widget_set_events(channel_event, GDK_SCROLL_MASK);
 	g_signal_connect(G_OBJECT(channel_event), "scroll-event", G_CALLBACK(channel_label_scroll), uniden);
 
-	g_signal_connect(G_OBJECT(button), "clicked", G_CALLBACK(button_connect_clicked), uniden);
-	g_signal_connect(G_OBJECT(button_scan), "clicked", G_CALLBACK(button_scan_clicked), uniden);
-	g_signal_connect(G_OBJECT(button_man), "clicked", G_CALLBACK(button_man_clicked), uniden);
+	g_signal_connect(G_OBJECT(uniden->connect), "clicked", G_CALLBACK(button_connect_clicked), uniden);
+	g_signal_connect(G_OBJECT(uniden->scan), "clicked", G_CALLBACK(button_scan_clicked), uniden);
+	g_signal_connect(G_OBJECT(uniden->manual), "clicked", G_CALLBACK(button_man_clicked), uniden);
 
-	gtk_box_pack_start(GTK_BOX (uniden), button, FALSE, TRUE, 0);
-	gtk_box_pack_start(GTK_BOX (uniden), button_scan, FALSE, TRUE, 0);
-	gtk_box_pack_start(GTK_BOX (uniden), button_man, FALSE, TRUE, 0);
+	gtk_box_pack_start(GTK_BOX (uniden), uniden->connect, FALSE, TRUE, 0);
+	gtk_box_pack_start(GTK_BOX (uniden), uniden->scan, FALSE, TRUE, 0);
+	gtk_box_pack_start(GTK_BOX (uniden), uniden->manual, FALSE, TRUE, 0);
 
 	gtk_container_add(GTK_CONTAINER (uniden->frequency_event), uniden->frequency_label);
 	gtk_container_add(GTK_CONTAINER (channel_event), uniden->channel_label);
@@ -540,6 +545,8 @@ button_connect_clicked(GtkButton *button, gpointer user_data)
 
 	if (flock(uniden->fd, LOCK_EX) < 0) return;
 
+	gtk_widget_set_sensitive(uniden->connect, FALSE);
+
 	tcgetattr(uniden->fd,&uniden->oldtio);
 
 	bzero(&newtio, sizeof(newtio));
@@ -780,6 +787,9 @@ has_data(GIOChannel *source, GIOCondition condition, gpointer data)
 		uniden->mode = atoi(str+2);
 		if (uniden->mode == MANUEL_FREQUENCY_MODE)
 			_update_channel(uniden, 0);
+
+		gtk_widget_set_sensitive(uniden->scan, uniden->mode != CHANNEL_SCAN);
+		gtk_widget_set_sensitive(uniden->manual, uniden->mode == CHANNEL_SCAN);
 	}
 	else if ((len == 15) /* SGccc Fxxxxxxxx */
 		&& (str[0] == 'S')
