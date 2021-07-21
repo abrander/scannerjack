@@ -18,6 +18,9 @@
 	g_signal_handler_unblock(uniden->channel_store, uniden->channel_store_changed_id); \
 } while(0)
 
+/**
+ * Convenience macro for getting an iter from the model.
+ */
 #define _channel_get_iter(uniden, ...) gtk_tree_model_get(GTK_TREE_MODEL(uniden->channel_store), __VA_ARGS__)
 
 static gfloat ctcss_table[] = { 0.0F,
@@ -74,7 +77,7 @@ struct _SJUnidenWidget
 	GtkWidget *progress;
 };
 
-static void _send_command(SJUnidenWidget *uniden, const gchar *cmd);
+static void _send_command(SJUnidenWidget *uniden, const gchar *format, ...);
 static gboolean has_data(GIOChannel *source, GIOCondition condition, gpointer data);
 static void _set_squelch(SJUnidenWidget *uniden, gboolean squelch_open);
 static void _channel_find_iter(SJUnidenWidget *uniden, GtkTreeIter *iter, gint channel);
@@ -91,49 +94,59 @@ sj_uniden_widget_class_init(SJUnidenWidgetClass *klass)
 {
 }
 
+/**
+ * Check mode and squelch from time to time.
+ */
 static gboolean
 _sync_slow(gpointer data)
 {
 	SJUnidenWidget *uniden = SJ_UNIDEN_WIDGET(data);
 
 	/* Check mode */
-	_send_command(uniden, "MD\r");
+	_send_command(uniden, "MD");
 
 	/* Check squelch */
-	_send_command(uniden, "SQ\r");
+	_send_command(uniden, "SQ");
 
 	return TRUE;
 }
 
+/**
+ * Check mode as often as possible.
+ */
 static gboolean
 _sync_fast(gpointer data)
 {
 	SJUnidenWidget *uniden = SJ_UNIDEN_WIDGET(data);
 
-	switch(uniden->mode)
+	switch (uniden->mode)
 	{
 		case CHANNEL_SCAN:
 			/* Get current channel & frequency */
 			if (uniden->squelch_open && (uniden->got_frequency == FALSE))
-				_send_command(uniden, "MA\r");
-			_send_command(uniden, "SG\r");
+				_send_command(uniden, "MA");
+
+			_send_command(uniden, "SG");
 			break;
+
 		case MANUAL_MODE:
 		case MANUEL_FREQUENCY_MODE:
 			/* Get current frequency */
-			_send_command(uniden, "LCD FRQ\r");
+			_send_command(uniden, "LCD FRQ");
 			break;
 	}
 
 	return TRUE;
 }
 
+/**
+ * Upload new channel configuration to radio.
+ */
 static void
 _upload_channel(SJUnidenWidget *uniden, const gint channel)
 {
 	GtkTreeIter iter;
 	UNIDEN_MODE mode = uniden->mode;
-	gchar buffer[40];
 	gint frequency, ctcss_tone;
 	gboolean lockout, delay;
 	gchar *tag;
@@ -148,37 +161,37 @@ _upload_channel(SJUnidenWidget *uniden, const gint channel)
 		-1);
 
 	/* Set frequency */
-	g_snprintf(buffer, sizeof(buffer), "PM%03d %08d\r", channel, frequency);
-	_send_command(uniden, buffer);
+	_send_command(uniden, "PM%03d %08d", channel, frequency);
 
 	/* Set lockout */
-	g_snprintf(buffer, sizeof(buffer), "LO%c\r", TO_UNIDEN_BOOL(lockout));
-	_send_command(uniden, buffer);
+	_send_command(uniden, "LO%c", TO_UNIDEN_BOOL(lockout));
 
 	/* Set delay */
-	g_snprintf(buffer, sizeof(buffer), "DL%c\r", TO_UNIDEN_BOOL(delay));
-	_send_command(uniden, buffer);
+	_send_command(uniden, "DL%c", TO_UNIDEN_BOOL(delay));
 
 	/* Set ctcss */
-	g_snprintf(buffer, sizeof(buffer), "CS%03d\r", ctcss_tone);
-	_send_command(uniden, buffer);
+	_send_command(uniden, "CS%03d", ctcss_tone);
 
 	/* Set tag */
 	if (tag)
 	{
-		g_snprintf(buffer, sizeof(buffer), "TA C %03d %s\r", channel, tag);
-		_send_command(uniden, buffer);
+		_send_command(uniden, "TA C %03d %s", channel, tag);
+
 		g_free(tag);
 	}
+
+	/* Restore mode if needed, setting channel will put the scanner in manual mode */
 	if (mode == CHANNEL_SCAN)
-		_send_command(uniden, "KEY00\r");
+		_send_command(uniden, "KEY00");
 
 	/* Read back the new channel-settings */
-	g_snprintf(buffer, sizeof(buffer), "PM%03d\r", channel);
-	_send_command(uniden, buffer);
+	_send_command(uniden, "PM%03d", channel);
 }
 
-void
+/**
+ * Callback to be called when the user has changed a row in the channel list.
+ */
+static void
 channel_row_changed(GtkTreeModel *tree_model, GtkTreePath *path, GtkTreeIter *iter, gpointer user_data)
 {
 	SJUnidenWidget *uniden = SJ_UNIDEN_WIDGET(user_data);
@@ -215,7 +228,7 @@ sj_uniden_widget_init(SJUnidenWidget *uniden)
 	uniden->getting_channels = TRUE;
 	uniden->getting_channel = 1;
 
-	uniden->channel_store = gtk_list_store_new (CHANNELSTORE_NUM_COLUMNS,
+	uniden->channel_store = gtk_list_store_new(CHANNELSTORE_NUM_COLUMNS,
 		G_TYPE_INT,
 		G_TYPE_INT,
 		G_TYPE_BOOLEAN,
@@ -257,22 +270,22 @@ sj_uniden_widget_init(SJUnidenWidget *uniden)
 	g_signal_connect(G_OBJECT(button_scan), "clicked", G_CALLBACK(button_scan_clicked), uniden);
 	g_signal_connect(G_OBJECT(button_man), "clicked", G_CALLBACK(button_man_clicked), uniden);
 
-	gtk_box_pack_start (GTK_BOX (uniden), button, FALSE, TRUE, 0);
-	gtk_box_pack_start (GTK_BOX (uniden), button_scan, FALSE, TRUE, 0);
-	gtk_box_pack_start (GTK_BOX (uniden), button_man, FALSE, TRUE, 0);
+	gtk_box_pack_start(GTK_BOX (uniden), button, FALSE, TRUE, 0);
+	gtk_box_pack_start(GTK_BOX (uniden), button_scan, FALSE, TRUE, 0);
+	gtk_box_pack_start(GTK_BOX (uniden), button_man, FALSE, TRUE, 0);
 
-	gtk_container_add (GTK_CONTAINER (uniden->frequency_event), uniden->frequency_label);
-	gtk_container_add (GTK_CONTAINER (channel_event), uniden->channel_label);
+	gtk_container_add(GTK_CONTAINER (uniden->frequency_event), uniden->frequency_label);
+	gtk_container_add(GTK_CONTAINER (channel_event), uniden->channel_label);
 
-	gtk_box_pack_start (GTK_BOX (uniden), channel_event, FALSE, TRUE, 0);
-	gtk_box_pack_start (GTK_BOX (uniden), uniden->frequency_event, FALSE, TRUE, 0);
-	gtk_box_pack_start (GTK_BOX (uniden), uniden->progress, FALSE, TRUE, 0);
+	gtk_box_pack_start(GTK_BOX (uniden), channel_event, FALSE, TRUE, 0);
+	gtk_box_pack_start(GTK_BOX (uniden), uniden->frequency_event, FALSE, TRUE, 0);
+	gtk_box_pack_start(GTK_BOX (uniden), uniden->progress, FALSE, TRUE, 0);
 }
 
 GtkWidget *
 sj_uniden_widget_new(void)
 {
-	return g_object_new (SJ_UNIDEN_TYPE_WIDGET, NULL);
+	return g_object_new(SJ_UNIDEN_TYPE_WIDGET, NULL);
 }
 
 GtkListStore *
@@ -287,21 +300,33 @@ sj_uniden_get_channelstore(SJUnidenWidget *uniden)
  * Sends a command to the radio unit
  */
 static void
-_send_command(SJUnidenWidget *uniden, const gchar *cmd)
+_send_command(SJUnidenWidget *uniden, const gchar *format, ...)
 {
 	g_return_if_fail(SJ_IS_UNIDEN_WIDGET(uniden));
 
+    va_list args;
 	gsize written;
+	gchar buffer[1024];
 
-	printf("\033[33m%s\n", cmd); /* DEBUG */
+    va_start(args, format);
+
+	g_vsnprintf(buffer, sizeof(buffer), format, args);
+
+	printf("\033[33m%s\n", buffer); /* DEBUG */
 
 	if (uniden->io)
 	{
-		g_io_channel_write_chars(uniden->io, cmd, strlen(cmd), &written, NULL);
+		g_io_channel_write_chars(uniden->io, buffer, strlen(buffer), &written, NULL);
+		g_io_channel_write_chars(uniden->io, "\r", 1, &written, NULL);
 		g_io_channel_flush(uniden->io, NULL);
 	}
 }
 
+/**
+ * Will find an iter matching channel. If we iter is found, one will be
+ * added. This can happen if there's traffic before the full channel list
+ * is read from the radio.
+ */
 static void
 _channel_find_iter(SJUnidenWidget *uniden, GtkTreeIter *iter, const gint channel)
 {
@@ -327,11 +352,14 @@ _channel_find_iter(SJUnidenWidget *uniden, GtkTreeIter *iter, const gint channel
 	}
 
 	if (exists == FALSE)
-		gtk_list_store_append (uniden->channel_store, iter);
+		gtk_list_store_append(uniden->channel_store, iter);
 
 	return;
 }
 
+/**
+ * Update frequency in the GUI.
+ */
 static void
 _update_frequency(SJUnidenWidget *uniden, const gint frequency)
 {
@@ -349,10 +377,15 @@ _update_frequency(SJUnidenWidget *uniden, const gint frequency)
 	}
 	else
 		sprintf(buffer, "<big><b>-</b></big>");
+
 	gtk_label_set_markup(GTK_LABEL(uniden->frequency_label), buffer);
 }
 
-void
+/**
+ * Update the hit counter for a channel. This will only be increased if the
+ * channel has had continued activity for multiple seconds.
+ */
+static void
 _channel_hit(SJUnidenWidget *uniden, const gint channel)
 {
 	gint64 now, activity;
@@ -377,7 +410,11 @@ _channel_hit(SJUnidenWidget *uniden, const gint channel)
 	}
 }
 
-void
+/**
+ * Set an activity time for the channel. This is used to calculate hit
+ * in _channel_hit
+ */
+static void
 _channel_set_activity(SJUnidenWidget *uniden, const gint channel)
 {
 	gint64 now;
@@ -391,6 +428,9 @@ _channel_set_activity(SJUnidenWidget *uniden, const gint channel)
 		-1);
 }
 
+/**
+ * Update the channel label.
+ */
 static void
 _update_channel(SJUnidenWidget *uniden, const gint channel)
 {
@@ -415,6 +455,7 @@ _update_channel(SJUnidenWidget *uniden, const gint channel)
 				CHANNELSTORE_BGCOLOR, "#99FF99",
 				-1);
 		}
+
 		uniden->active_channel = channel;
 	}
 
@@ -458,6 +499,7 @@ _set_squelch(SJUnidenWidget *uniden, gboolean squelch_open)
 	{
 		if (uniden->squelch_open)
 			_channel_set_activity(uniden, uniden->channel);
+
 		return;
 	}
 
@@ -486,10 +528,11 @@ static void
 button_connect_clicked(GtkButton *button, gpointer user_data)
 {
 	SJUnidenWidget *uniden = SJ_UNIDEN_WIDGET(user_data);
-	printf("Connect %s\n", uniden->path);
 	g_return_if_fail(SJ_IS_UNIDEN_WIDGET(uniden));
 
 	struct termios newtio;
+
+	printf("Connect %s\n", uniden->path);
 
 	uniden->fd = open(uniden->path, O_RDWR | O_NOCTTY | O_NONBLOCK);
 
@@ -500,6 +543,11 @@ button_connect_clicked(GtkButton *button, gpointer user_data)
 	tcgetattr(uniden->fd,&uniden->oldtio);
 
 	bzero(&newtio, sizeof(newtio));
+
+	/* fix for clang needed for some reason */
+	#ifndef CRTSCTS
+		#define CRTSCTS	  020000000000
+	#endif
 
 	newtio.c_cflag = B19200 | CRTSCTS | CS8 | CLOCAL | CREAD;
 	newtio.c_iflag = IGNPAR | ICRNL;
@@ -525,14 +573,14 @@ button_connect_clicked(GtkButton *button, gpointer user_data)
 	newtio.c_cc[VEOL2]    = 0; /* '\0' */
 
 	tcflush(uniden->fd, TCIFLUSH);
-	tcsetattr(uniden->fd,TCSANOW,&newtio);
+	tcsetattr(uniden->fd, TCSANOW, &newtio);
 
 	uniden->io = g_io_channel_unix_new(uniden->fd);
 	g_io_add_watch(uniden->io, G_IO_IN, has_data, uniden);
 
 	/* Start channel download */
-	_send_command(uniden, "SI\r");
-	_send_command(uniden, "PM001\r");
+	_send_command(uniden, "SI");
+	_send_command(uniden, "PM001");
 }
 
 static void
@@ -540,7 +588,7 @@ button_scan_clicked(GtkButton *button, gpointer user_data)
 {
 	SJUnidenWidget *uniden = SJ_UNIDEN_WIDGET(user_data);
 
-	_send_command(uniden, "KEY00\r");
+	_send_command(uniden, "KEY00");
 	_update_channel(uniden, 0);
 	_update_frequency(uniden, 0);
 }
@@ -550,15 +598,14 @@ button_man_clicked(GtkButton *button, gpointer user_data)
 {
 	SJUnidenWidget *uniden = SJ_UNIDEN_WIDGET(user_data);
 
-	_send_command(uniden, "KEY01\r");
-	_send_command(uniden, "LCD FRQ\r");
-	_send_command(uniden, "ST\r");
+	_send_command(uniden, "KEY01");
+	_send_command(uniden, "LCD FRQ");
+	_send_command(uniden, "ST");
 }
 
 static gboolean
 channel_label_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer user_data)
 {
-	gchar buffer[40];
 	gint step = 1;
 
 	SJUnidenWidget *uniden = SJ_UNIDEN_WIDGET(user_data);
@@ -568,12 +615,11 @@ channel_label_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer user_dat
 	switch (event->direction)
 	{
 		case GDK_SCROLL_UP:
-			sprintf(buffer, "MA%03d\r", uniden->channel + step);
-			_send_command(uniden, buffer);
+			_send_command(uniden, "MA%03d", uniden->channel + step);
 			break;
+
 		case GDK_SCROLL_DOWN:
-			sprintf(buffer, "MA%03d\r", uniden->channel - step);
-			_send_command(uniden, buffer);
+			_send_command(uniden, "MA%03d", uniden->channel - step);
 			break;
 	}
 
@@ -583,32 +629,30 @@ channel_label_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer user_dat
 static gboolean
 frequency_label_scroll(GtkWidget *widget, GdkEventScroll *event, gpointer user_data)
 {
-	gchar buffer[40];
-
 	SJUnidenWidget *uniden = SJ_UNIDEN_WIDGET(user_data);
 
 	gint step = uniden->stepsize;
 
 	button_man_clicked(NULL, uniden);
 
-	if (event->state & (GDK_CONTROL_MASK||GDK_SHIFT_MASK))
+	if (event->state & (GDK_CONTROL_MASK || GDK_SHIFT_MASK))
 		step = 100000;
 	else if (event->state & GDK_CONTROL_MASK)
 		step = 10000;
+
 	switch (event->direction)
 	{
 		case GDK_SCROLL_UP:
-			sprintf(buffer, "RF%08d\r", uniden->frequency + step);
-			_send_command(uniden, buffer);
+			_send_command(uniden, "RF%08d", uniden->frequency + step);
 			break;
+
 		case GDK_SCROLL_DOWN:
-			sprintf(buffer, "RF%08d\r", uniden->frequency - step);
-			_send_command(uniden, buffer);
+			_send_command(uniden, "RF%08d", uniden->frequency - step);
 			break;
 	}
 
 	/* Update step-size */
-	_send_command(uniden, "ST\r");
+	_send_command(uniden, "ST");
 
 	return TRUE;
 }
@@ -631,7 +675,7 @@ has_data(GIOChannel *source, GIOCondition condition, gpointer data)
 	printf("\033[32m%s", str);
 
 	/* Check input */
-	for(i=0;i<len;i++)
+	for (i=0; i<len; i++)
 	{
 		if (str[i] == '\r')
 			if (i != len)
@@ -652,7 +696,7 @@ has_data(GIOChannel *source, GIOCondition condition, gpointer data)
 		&& (str[1] == 'A')
 		&& (str[2] == ' '))
 	{
-		switch(str[3])
+		switch (str[3])
 		{
 			case 'C':
 				str[8] = '\0';
@@ -666,6 +710,7 @@ has_data(GIOChannel *source, GIOCondition condition, gpointer data)
 					CHANNELSTORE_TAG, str+9,
 					-1);
 				break;
+
 			default:
 				break;
 		}
@@ -676,8 +721,6 @@ has_data(GIOChannel *source, GIOCondition condition, gpointer data)
 		&& g_ascii_isdigit(str[2])
 		&& g_ascii_isdigit(str[3]))
 	{
-		gchar buffer[40];
-
 		/* Channel */
 		str[4] = '\0';
 		channel = atoi(str+1);
@@ -712,15 +755,14 @@ has_data(GIOChannel *source, GIOCondition condition, gpointer data)
 				-1);
 
 			uniden->getting_channel++;
+
 			if (uniden->getting_channel <= 500)
 			{
-				sprintf(buffer, "PM%03d\r", uniden->getting_channel);
-				_send_command(uniden, buffer);
-
-				sprintf(buffer, "TA C %03d\r", uniden->getting_channel);
-				_send_command(uniden, buffer);
+				_send_command(uniden, "PM%03d", uniden->getting_channel);
+				_send_command(uniden, "TA C %03d", uniden->getting_channel);
 			}
 		}
+
 		/* Update channel and frequency unless we're in CHANNEL_SCAN and squelch is closed */
 		else if (!((uniden->mode == CHANNEL_SCAN) && (uniden->squelch_open == FALSE)))
 		{
@@ -747,15 +789,12 @@ has_data(GIOChannel *source, GIOCondition condition, gpointer data)
 		&& g_ascii_isspace(str[4])
 		&& (str[5] == 'F'))
 	{
-		gchar pro_buffer[20];
 		gint s;
 		str[4] = '\0';
 		str[14] = '\0';
 		s = atoi(str+1);
 		frequency = atoi(str+6);
-		snprintf(pro_buffer, 20, "%d.%04d", frequency/10000, frequency%10000);
 		gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(uniden->progress), s/255.0F);
-//		gtk_progress_bar_set_text(GTK_PROGRESS_BAR(uniden->progress), pro_buffer);
 	}
 	else if ((len == 11) /* RFxxxxxxxx - frequency */
 		&& (str[0] == 'R')
@@ -802,7 +841,7 @@ has_data(GIOChannel *source, GIOCondition condition, gpointer data)
 	else if ((str[0] == 'S') /* SI - system information */
 		&& (str[1] == 'I'))
 	{
-		for(i=0;i<len;i++)
+		for (i=0; i<len; i++)
 		{
 			if (str[i] == ',')
 			{
@@ -818,7 +857,9 @@ has_data(GIOChannel *source, GIOCondition condition, gpointer data)
 		printf("got data[%ld]: %s", len, str);
 
 	g_free(str);
+
 	has_data(source, condition, data);
+
 	return TRUE;
 }
 
@@ -857,7 +898,6 @@ void
 sj_uniden_channel_set_frequency(SJUnidenWidget *uniden, const gint channel, const gint frequency)
 {
 	GtkTreeIter iter;
-	gchar buffer[40];
 
 	g_return_if_fail(SJ_IS_UNIDEN_WIDGET(uniden));
 
@@ -873,7 +913,6 @@ void
 sj_uniden_channel_set_tag(SJUnidenWidget *uniden, const gint channel, const gchar *tag)
 {
 	GtkTreeIter iter;
-	gchar buffer[40];
 	gchar *oldtag;
 
 	g_return_if_fail(SJ_IS_UNIDEN_WIDGET(uniden));
@@ -889,8 +928,7 @@ sj_uniden_channel_set_tag(SJUnidenWidget *uniden, const gint channel, const gcha
 			CHANNELSTORE_TAG, tag,
 			-1);
 
-		g_snprintf(buffer, sizeof(buffer), "TA C %03d %s\r", channel, tag);
-		_send_command(uniden, buffer);
+		_send_command(uniden, "TA C %03d %s", channel, tag);
 	}
 }
 
@@ -899,7 +937,6 @@ sj_uniden_channel_set_lockout(SJUnidenWidget *uniden, const gint channel, const 
 {
 	UNIDEN_MODE mode;
 	GtkTreeIter iter;
-	gchar buffer[40];
 	gboolean oldlockout;
 
 	g_return_if_fail(SJ_IS_UNIDEN_WIDGET(uniden));
@@ -923,19 +960,16 @@ sj_uniden_channel_set_lockout(SJUnidenWidget *uniden, const gint channel, const 
 			-1);
 
 		/* Change to the affected channel */
-		g_snprintf(buffer, sizeof(buffer), "MA%03d\r", channel);
-		_send_command(uniden, buffer);
+		_send_command(uniden, "MA%03d", channel);
 
 		/* Update lockout state */
-		g_snprintf(buffer, sizeof(buffer), "LO%c\r", TO_UNIDEN_BOOL(lockout));
-		_send_command(uniden, buffer);
+		_send_command(uniden, "LO%c", TO_UNIDEN_BOOL(lockout));
 
 		/* Restore saved mode */
 		if (mode == CHANNEL_SCAN)
-			_send_command(uniden, "KEY00\r");
+			_send_command(uniden, "KEY00");
 
-		g_snprintf(buffer, sizeof(buffer), "PM%03d\r", channel);
-		_send_command(uniden, buffer);
+		_send_command(uniden, "PM%03d", channel);
 	}
 }
 
@@ -944,7 +978,6 @@ sj_uniden_channel_set_delay(SJUnidenWidget *uniden, const gint channel, const gb
 {
 	UNIDEN_MODE mode;
 	GtkTreeIter iter;
-	gchar buffer[40];
 	gboolean olddelay;
 
 	g_return_if_fail(SJ_IS_UNIDEN_WIDGET(uniden));
@@ -968,18 +1001,16 @@ sj_uniden_channel_set_delay(SJUnidenWidget *uniden, const gint channel, const gb
 			-1);
 
 		/* Change to the affected channel */
-		g_snprintf(buffer, sizeof(buffer), "MA%03d\r", channel);
-		_send_command(uniden, buffer);
+		_send_command(uniden, "MA%03d", channel);
 
 		/* Update delay state */
-		g_snprintf(buffer, sizeof(buffer), "DL%c\r", TO_UNIDEN_BOOL(delay));
-		_send_command(uniden, buffer);
+		_send_command(uniden, "DL%c", TO_UNIDEN_BOOL(delay));
 
 		/* Restore saved mode */
 		if (mode == CHANNEL_SCAN)
-			_send_command(uniden, "KEY00\r");
+			_send_command(uniden, "KEY00");
 
-		g_snprintf(buffer, sizeof(buffer), "PM%03d\r", channel);
-		_send_command(uniden, buffer);
+		/* Read back new channel settings */
+		_send_command(uniden, "PM%03d", channel);
 	}
 }
