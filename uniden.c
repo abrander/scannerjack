@@ -692,36 +692,29 @@ has_data(GIOChannel *source, GIOCondition condition, gpointer data)
 			}
 	}
 
-	if (str[0] == '-')
-	{
+	if (g_str_has_prefix(str, "-")) /* Squelsh closed */
 		_set_squelch(uniden, FALSE);
-	}
-	else if (str[0] == '+')
-		_set_squelch(uniden, TRUE);
-	else if ((len>9)
-		&& (str[0] == 'T')
-		&& (str[1] == 'A')
-		&& (str[2] == ' '))
-	{
-		switch (str[3])
-		{
-			case 'C':
-				str[8] = '\0';
-				channel = atoi(str+4);
-				tmp = rindex(str+9, '\n');
-				if (tmp)
-					*tmp = '\0';
-				_channel_find_iter(uniden, &iter, channel);
-				_channel_set_iter(uniden, &iter,
-					CHANNELSTORE_CHANNEL, channel,
-					CHANNELSTORE_TAG, str+9,
-					-1);
-				break;
 
-			default:
-				break;
-		}
+	else if (g_str_has_prefix(str, "+")) /* Squelsh opened */
+		_set_squelch(uniden, TRUE);
+
+	else if (g_str_has_prefix(str, "TA C")) /* Channel tag */
+	{
+		str[8] = '\0';
+
+		channel = atoi(str + 4);
+
+		tmp = rindex(str + 9, '\n');
+		if (tmp)
+			*tmp = '\0';
+
+		_channel_find_iter(uniden, &iter, channel);
+		_channel_set_iter(uniden, &iter,
+			CHANNELSTORE_CHANNEL, channel,
+			CHANNELSTORE_TAG, str + 9,
+			-1);
 	}
+
 	else if ((len == 35) /* Cxxx - Channel info */
 		&& (str[0] == 'C')
 		&& g_ascii_isdigit(str[1])
@@ -730,13 +723,11 @@ has_data(GIOChannel *source, GIOCondition condition, gpointer data)
 	{
 		/* Channel */
 		str[4] = '\0';
-		channel = atoi(str+1);
+		channel = atoi(str + 1);
 
 		/* Frequency */
 		str[14] = '\0';
-		frequency = atoi(str+6);
-
-		str[34] = '\0';
+		frequency = atoi(str + 6);
 
 		/* Find a iter to save info to */
 		_channel_find_iter(uniden, &iter, channel);
@@ -749,6 +740,12 @@ has_data(GIOChannel *source, GIOCondition condition, gpointer data)
 
 		if ((uniden->getting_channels == TRUE) && (uniden->getting_channel == channel))
 		{
+			gint ctcss;
+
+			/* CTCSS */
+			str[34] = '\0';
+			ctcss = atoi(str + 31);
+
 			/* Save everything else if we're getting channels */
 			_channel_set_iter(uniden, &iter,
 				CHANNELSTORE_CHANNEL, channel,
@@ -758,7 +755,7 @@ has_data(GIOChannel *source, GIOCondition condition, gpointer data)
 				CHANNELSTORE_LOCKOUT, FROM_UNIDEN_BOOL(str[22]),
 				CHANNELSTORE_ATTENUATOR, FROM_UNIDEN_BOOL(str[25]),
 				CHANNELSTORE_RECORDING, FROM_UNIDEN_BOOL(str[28]),
-				CHANNELSTORE_CTCSS_TONE, atoi(str+31),
+				CHANNELSTORE_CTCSS_TONE, ctcss,
 				-1);
 
 			uniden->getting_channel++;
@@ -777,38 +774,40 @@ has_data(GIOChannel *source, GIOCondition condition, gpointer data)
 			_update_frequency(uniden, frequency);
 		}
 	}
+
 	else if ((len == 5) /* MDxx - Mode */
-		&& (str[0] == 'M')
-		&& (str[1] == 'D')
+		&& g_str_has_prefix(str, "MD")
 		&& g_ascii_isdigit(str[2])
 		&& g_ascii_isdigit(str[3]))
 	{
 		str[4] = '\0';
-		uniden->mode = atoi(str+2);
+		uniden->mode = atoi(str + 2);
+
 		if (uniden->mode == MANUEL_FREQUENCY_MODE)
 			_update_channel(uniden, 0);
 
 		gtk_widget_set_sensitive(uniden->scan, uniden->mode != CHANNEL_SCAN);
 		gtk_widget_set_sensitive(uniden->manual, uniden->mode == CHANNEL_SCAN);
 	}
-	else if ((len == 15) /* SGccc Fxxxxxxxx */
+
+	else if ((len == 15) /* Ssss Fxxxxxxxx  - squelsh */
 		&& (str[0] == 'S')
 		&& g_ascii_isdigit(str[1])
 		&& g_ascii_isdigit(str[2])
 		&& g_ascii_isdigit(str[3])
-		&& g_ascii_isspace(str[4])
+		&& (str[4] == ' ')
 		&& (str[5] == 'F'))
 	{
-		gint s;
+		gint squelsh;
+
 		str[4] = '\0';
-		str[14] = '\0';
-		s = atoi(str+1);
-		frequency = atoi(str+6);
-		gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(uniden->progress), s/255.0F);
+		squelsh = atoi(str + 1);
+
+		gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(uniden->progress), squelsh / 255.0F);
 	}
+
 	else if ((len == 11) /* RFxxxxxxxx - frequency */
-		&& (str[0] == 'R')
-		&& (str[1] == 'F')
+		&& g_str_has_prefix(str, "RF")
 		&& g_ascii_isdigit(str[2])
 		&& g_ascii_isdigit(str[3])
 		&& g_ascii_isdigit(str[4])
@@ -819,58 +818,57 @@ has_data(GIOChannel *source, GIOCondition condition, gpointer data)
 		&& g_ascii_isdigit(str[9]))
 	{
 		str[10] = '\0';
-		_update_frequency(uniden, atoi(str+2));
+
+		_update_frequency(uniden, atoi(str + 2));
 	}
+
 	else if ((len == 16) /* FRQ - Display frequency read-out */
-		&& (strncmp("FRQ [", str, 5)==0))
+		&& g_str_has_prefix(str, "FRQ ["))
 	{
-		str[9] = '\0';
-		str[14] = '\0';
-		_update_frequency(uniden, atoi(str+5)*10000 + atoi(str+10));
+		str[9] = '\0'; // comma
+		str[14] = '\0'; // ]
+
+		_update_frequency(uniden, atoi(str + 5) * 10000 + atoi(str + 10));
 	}
-	else if ((str[0] == 'S') /* ST - Step size */
-		&& (str[1] == 'T'))
+
+	else if (g_str_has_prefix(str, "ST"))
 	{
-		str[len-1] = '\0';
-		/* 5K / 12.5K / 25K / 50K / 10K / 100K / 7.5K */
-		if (strcmp(str, "ST 5K")==0)
+		str[len - 1] = '\0';
+
+		if (g_str_equal(str, "ST 5K"))
 			uniden->stepsize = 50;
-		else if (strcmp(str, "ST 12.5K")==0)
+		else if (g_str_equal(str, "ST 12.5K"))
 			uniden->stepsize = 125;
-		else if (strcmp(str, "ST 25K")==0)
+		else if (g_str_equal(str, "ST 25K"))
 			uniden->stepsize = 250;
-		else if (strcmp(str, "ST 50K")==0)
+		else if (g_str_equal(str, "ST 50K"))
 			uniden->stepsize = 500;
-		else if (strcmp(str, "ST 10K")==0)
+		else if (g_str_equal(str, "ST 10K"))
 			uniden->stepsize = 100;
-		else if (strcmp(str, "ST 100K")==0)
+		else if (g_str_equal(str, "ST 100K"))
 			uniden->stepsize = 1000;
-		else if (strcmp(str, "ST 7.5K")==0)
+		else if (g_str_equal(str, "ST 7.5K"))
 			uniden->stepsize = 75;
 	}
-	else if ((str[0] == 'S') /* SI - system information */
-		&& (str[1] == 'I'))
+
+	else if (g_str_has_prefix(str, "SI")) /* SI - system information */
 	{
 		for (i=0; i<len; i++)
-		{
 			if (str[i] == ',')
 			{
-				str[i] = '\0';
-				uniden->model = g_strdup(str+3);
+				uniden->model = g_strndup(str + 3, i - 3);
+
+				break;
 			}
-		}
 	}
-	else if (!((len == 3)
-		&& (str[0] == 'N')
-		&& (str[1] == 'G')
-		))
+
+	else if (!(len == 3)
+		&& g_str_has_prefix(str, "NG"))
 		printf("got data[%ld]: %s", len, str);
 
 	g_free(str);
 
-	has_data(source, condition, data);
-
-	return TRUE;
+	return has_data(source, condition, data);
 }
 
 void
